@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Petty Cash Saldo, Rekap SO & Kontrol BKK/KBS Cloud</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        @media print {
+            @page { margin: 1cm; }
+            .no-print { display: none !important; }
+            .print-only-force { display: block !important; }
+            body { background: white !important; font-size: 9.5px; color: black !important; }
+            .print-card { border: 1px solid #94a3b8 !important; box-shadow: none !important; margin-bottom: 10px !important; padding: 10px !important; page-break-inside: avoid; }
+            input, select { border: none !important; background: transparent !important; padding: 0 !important; font-weight: bold; color: black !important; width: 100%; }
+            table { width: 100% !important; border-collapse: collapse !important; }
+            th, td { border: 1px solid #64748b !important; padding: 4px 6px !important; }
+            th { background-color: #f1f5f9 !important; -webkit-print-color-adjust: exact; }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 font-sans pb-12">
+
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        <!-- Header & Action Buttons -->
+        <div class="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-4 gap-4 no-print">
+            <div>
+                <h1 class="text-2xl font-extrabold text-emerald-700">REKAP PETTY CASH & STOCK OPNAME (SO)</h1>
+                <p class="text-sm text-slate-500">Cabang Lebak, Tangerang, & Parung | Saldo Tunai Otomatis (Saldo Cabang - BKK - KBS)</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button id="btn-sync-load" onclick="loadFromCloud()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-3 py-2 rounded-xl text-sm font-medium transition flex items-center gap-1.5">
+                    🔄 Muat Ulang Data
+                </button>
+                <button id="btn-save-cloud" onclick="saveData()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-sm transition flex items-center gap-1.5">
+                    ☁️ Simpan ke Sheets
+                </button>
+                <button onclick="exportToExcel()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-sm transition flex items-center gap-1.5">
+                    📊 Export Excel
+                </button>
+                <button onclick="printRekap()" class="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-sm transition flex items-center gap-1.5">
+                    🖨️ Cetak / PDF
+                </button>
+            </div>
+        </div>
+
+        <!-- Status Bar Sinkronisasi -->
+        <div id="sync-status-bar" class="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl px-4 py-2.5 mb-4 text-xs flex justify-between items-center no-print">
+            <span id="sync-status-text">Menyiapkan koneksi Google Sheets...</span>
+            <span class="font-semibold">Sheet: Petty cash kanwil 2</span>
+        </div>
+
+        <!-- Navigasi 2 Menu Utama -->
+        <div class="grid grid-cols-2 gap-2 bg-white p-2 rounded-2xl shadow-sm border border-slate-200 mb-6 no-print">
+            <button id="tab-btn-rekap" onclick="switchTab('rekap')" class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-emerald-600 text-white transition">
+                📋 1. Menu Rekap Utama
+            </button>
+            <button id="tab-btn-input" onclick="switchTab('input')" class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+                🗂️ 2. Input BKK, KBS & Saldo Kas
+            </button>
+        </div>
+
+        <!-- Judul Khusus Cetak -->
+        <div class="hidden print:block text-center mb-4">
+            <h2 class="text-lg font-bold uppercase">LAPORAN REKAPITULASI PETTY CASH & STOCK OPNAME (SO)</h2>
+            <p class="text-xs text-slate-600">Cabang Lebak, Tangerang, & Parung</p>
+        </div>
+
+        <!-- ==================== MENU 1: REKAP UTAMA ==================== -->
+        <div id="tab-rekap" class="tab-content print-only-force">
+            <!-- 1. Rekap Saldo & Kas Utama -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6 print-card">
+                <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <span class="w-3 h-3 bg-emerald-600 rounded-full"></span> 1. Rekap Saldo & Kas Utama
+                </h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse border border-slate-200">
+                        <thead>
+                            <tr class="bg-slate-50 text-slate-700 text-xs uppercase tracking-wider border-b border-slate-200">
+                                <th class="p-3 border-r">CABANG</th>
+                                <th class="p-3 border-r bg-emerald-50/70">SALDO CABANG</th>
+                                <th class="p-3 border-r">SALDO (Otomatis)</th>
+                                <th class="p-3 border-r">KBS (Otomatis)</th>
+                                <th class="p-3 border-r">BKK (Otomatis)</th>
+                                <th class="p-3 border-r bg-emerald-50">TOTAL</th>
+                                <th class="p-3">STATUS PROGRES & KET</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rekap-main-body" class="divide-y divide-slate-200 text-sm"></tbody>
+                        <tfoot>
+                            <tr class="bg-slate-100 font-bold text-slate-800 border-t-2 border-slate-300 text-sm">
+                                <td class="p-3 border-r">TOTAL</td>
+                                <td class="p-3 border-r text-emerald-800 bg-emerald-50/70" id="rekap-tot-saldo-cabang">Rp 9.500.000</td>
+                                <td class="p-3 border-r" id="rekap-tot-saldo">0</td>
+                                <td class="p-3 border-r" id="rekap-tot-kbs">0</td>
+                                <td class="p-3 border-r" id="rekap-tot-bkk">0</td>
+                                <td class="p-3 border-r text-emerald-700" id="rekap-tot-total">0</td>
+                                <td class="p-3 text-slate-500 text-xs">Saldo Tunai = Saldo Cabang - BKK - KBS</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 2. Rekap KBS per Divisi (Otomatis) -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6 print-card">
+                <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <span class="w-3 h-3 bg-emerald-600 rounded-full"></span> 2. Rekap KBS per Divisi (Otomatis)
+                </h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-sm border border-slate-200">
+                        <thead>
+                            <tr class="bg-slate-50 text-slate-700 text-xs uppercase border-b">
+                                <th class="p-2 border-r">DIVISI</th>
+                                <th class="p-2 border-r">Lebak</th>
+                                <th class="p-2 border-r">Tangerang</th>
+                                <th class="p-2 border-r">Parung</th>
+                                <th class="p-2 bg-emerald-50">TOTAL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rekap-kbs-div-body" class="divide-y divide-slate-200"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 3. Rekap BKK per Divisi & Progres BKK (Otomatis) -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print-card">
+                    <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <span class="w-3 h-3 bg-emerald-600 rounded-full"></span> 3. Rekap BKK per Divisi (Otomatis)
+                    </h2>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse text-sm border border-slate-200">
+                            <thead>
+                                <tr class="bg-slate-50 text-slate-700 text-xs uppercase border-b">
+                                    <th class="p-2 border-r">DIVISI</th>
+                                    <th class="p-2 border-r">Lebak</th>
+                                    <th class="p-2 border-r">Tangerang</th>
+                                    <th class="p-2 border-r">Parung</th>
+                                    <th class="p-2 bg-emerald-50">TOTAL</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rekap-bkk-div-body" class="divide-y divide-slate-200"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print-card">
+                    <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <span class="w-3 h-3 bg-emerald-600 rounded-full"></span> Progres Posisi BKK (Otomatis)
+                    </h2>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse text-sm border border-slate-200">
+                            <thead>
+                                <tr class="bg-slate-50 text-slate-700 text-xs uppercase border-b">
+                                    <th class="p-2 border-r">POSISI BKK</th>
+                                    <th class="p-2 border-r">Lebak</th>
+                                    <th class="p-2 border-r">Tangerang</th>
+                                    <th class="p-2 border-r">Parung</th>
+                                    <th class="p-2 bg-emerald-50">TOTAL</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rekap-progres-bkk-body" class="divide-y divide-slate-200"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. Catatan & Posisi Dana (Rekonsiliasi Saldo Cabang) -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6 print-card">
+                <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <span class="w-3 h-3 bg-emerald-600 rounded-full"></span> 4. Catatan & Posisi Dana (Rekonsiliasi Saldo Cabang)
+                </h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center">
+                        <span class="font-semibold text-slate-600">UANG DI REK OM</span>
+                        <span id="rekap-note-rek-om" class="font-bold text-slate-800">Rp 0</span>
+                    </div>
+                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center">
+                        <span class="font-semibold text-slate-600">UANG TUNAI</span>
+                        <span id="rekap-note-tunai" class="font-bold text-slate-800">Rp 0</span>
+                    </div>
+                    <div class="p-3 bg-blue-50/60 rounded-xl border border-blue-200 flex justify-between items-center">
+                        <span class="font-semibold text-blue-800">TOTAL KBS</span>
+                        <span id="rekap-note-kbs" class="font-bold text-blue-900">Rp 0</span>
+                    </div>
+                    <div class="p-3 bg-amber-50/60 rounded-xl border border-amber-200 flex justify-between items-center">
+                        <span class="font-semibold text-amber-800">TOTAL BKK</span>
+                        <span id="rekap-note-bkk" class="font-bold text-amber-900">Rp 0</span>
+                    </div>
+                </div>
+                <div class="mt-4 p-4 bg-emerald-50/70 rounded-xl border border-emerald-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <div>
+                        <span class="font-bold text-slate-700 text-sm block">TOTAL KESELURUHAN POSISI DANA (REK OM + TUNAI + KBS + BKK):</span>
+                        <span id="rekap-klop-status" class="text-xs font-semibold text-emerald-700">Status: Klop dengan Saldo Cabang</span>
+                    </div>
+                    <span id="rekap-grand-total-notes" class="font-extrabold text-emerald-700 text-xl">Rp 0</span>
+                </div>
+            </div>
+
+            <!-- 5. Lampiran Rincian No. BKK & No. KBS -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print-card">
+                    <h2 class="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 bg-amber-500 rounded-full"></span> 5A. Daftar No. BKK & Posisi iSentral
+                    </h2>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse text-xs border border-slate-200">
+                            <thead>
+                                <tr class="bg-slate-50 text-slate-700 uppercase border-b">
+                                    <th class="p-2 border-r">No. BKK</th>
+                                    <th class="p-2 border-r">Cabang</th>
+                                    <th class="p-2 border-r">Divisi</th>
+                                    <th class="p-2 border-r">Posisi</th>
+                                    <th class="p-2 text-right">Nominal</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rekap-list-bkk-body" class="divide-y divide-slate-200"></tbody>
+                            <tfoot>
+                                <tr class="bg-slate-100 font-bold">
+                                    <td colspan="4" class="p-2 border-r">TOTAL SELURUH BKK</td>
+                                    <td class="p-2 text-right text-amber-800" id="rekap-list-bkk-total">Rp 0</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print-card">
+                    <h2 class="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 bg-blue-500 rounded-full"></span> 5B. Daftar No. KBS & Kontrol 2x24 Jam
+                    </h2>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse text-xs border border-slate-200">
+                            <thead>
+                                <tr class="bg-slate-50 text-slate-700 uppercase border-b">
+                                    <th class="p-2 border-r">Tgl KBS</th>
+                                    <th class="p-2 border-r">No. KBS</th>
+                                    <th class="p-2 border-r">Cabang / Div</th>
+                                    <th class="p-2 border-r">Waktu / Status</th>
+                                    <th class="p-2 text-right">Nominal</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rekap-list-kbs-body" class="divide-y divide-slate-200"></tbody>
+                            <tfoot>
+                                <tr class="bg-slate-100 font-bold">
+                                    <td colspan="4" class="p-2 border-r">TOTAL SELURUH KBS</td>
+                                    <td class="p-2 text-right text-blue-800" id="rekap-list-kbs-total">Rp 0</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== MENU 2: INPUT DOKUMEN BKK, KBS & SALDO KAS ==================== -->
+        <div id="tab-input" class="tab-content hidden no-print">
+            <!-- Pengaturan Saldo Cabang & Posisi Kas -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
+                <h2 class="text-lg font-bold text-slate-800 mb-1">A. Saldo Cabang & Posisi Kas</h2>
+                <p class="text-xs text-slate-500 mb-4"><strong>SALDO (Otomatis)</strong> dihitung dari <code>Saldo Cabang - BKK - KBS</code>. Klik <strong>Simpan ke Sheets</strong> untuk menyimpan ke Google Spreadsheet.</p>
+                <div class="overflow-x-auto mb-4">
+                    <table class="w-full text-left border-collapse text-sm border border-slate-200">
+                        <thead>
+                            <tr class="bg-slate-50 text-slate-700 text-xs uppercase border-b">
+                                <th class="p-3 border-r">CABANG</th>
+                                <th class="p-3 border-r">SALDO CABANG</th>
+                                <th class="p-3 border-r bg-emerald-50/60">SALDO (Otomatis)</th>
+                                <th class="p-3">STATUS PROGRES & KET</th>
+                            </tr>
+                        </thead>
+                        <tbody id="input-saldo-body" class="divide-y divide-slate-200"></tbody>
+                    </table>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">UANG DI REK OM</label>
+                        <input type="number" id="input-note-rek-om" value="5886652" oninput="updateNotesFromInput()" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">UANG TUNAI</label>
+                        <input type="number" id="input-note-tunai" value="175948" oninput="updateNotesFromInput()" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filter Cabang & Pencarian -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-6 flex flex-col sm:flex-row gap-3 items-center justify-between">
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <span class="text-xs font-bold text-slate-600 uppercase">Filter Cabang:</span>
+                    <select id="filter-doc-branch" onchange="renderAll()" class="border border-slate-300 rounded-xl px-3 py-1.5 text-sm bg-slate-50">
+                        <option value="ALL">Semua Cabang</option>
+                        <option value="LEBAK">LEBAK</option>
+                        <option value="TGR">TGR</option>
+                        <option value="PARUNG">PARUNG</option>
+                    </select>
+                </div>
+                <div class="w-full sm:w-72">
+                    <input type="text" id="search-doc-input" oninput="renderAll()" placeholder="🔍 Cari No. BKK / No. KBS / Ket..." class="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-sm bg-slate-50 focus:bg-white focus:outline-none">
+                </div>
+            </div>
+
+            <!-- B. Input No. BKK + Pilihan Posisi BKK -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
+                <h2 class="text-lg font-bold text-amber-800 mb-1">B. Input No. BKK & Posisi iSentral</h2>
+                <p class="text-xs text-slate-500 mb-4">Otomatis mengisi Rekap BKK per Divisi, Progres Posisi BKK, Total BKK di Rekap Utama, dan Poin 4.</p>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-7 gap-2 mb-4 bg-amber-50/50 p-3 rounded-xl border border-amber-200">
+                    <input type="text" id="new-bkk-no" placeholder="No. BKK" class="border border-slate-300 rounded-lg p-2 text-xs bg-white">
+                    <select id="new-bkk-branch" class="border border-slate-300 rounded-lg p-2 text-xs bg-white">
+                        <option value="LEBAK">LEBAK</option>
+                        <option value="TGR">TGR</option>
+                        <option value="PARUNG">PARUNG</option>
+                    </select>
+                    <select id="new-bkk-div" class="border border-slate-300 rounded-lg p-2 text-xs bg-white">
+                        <option value="LCS">LCS</option>
+                        <option value="GA">GA</option>
+                        <option value="HRD">HRD</option>
+                        <option value="BMT">BMT</option>
+                    </select>
+                    <select id="new-bkk-posisi" class="border border-slate-300 rounded-lg p-2 text-xs bg-white font-semibold">
+                        <option value="Belum iSentral">Belum iSentral</option>
+                        <option value="Sudah iSentral">Sudah iSentral</option>
+                    </select>
+                    <input type="text" id="new-bkk-ket" placeholder="Keterangan" class="border border-slate-300 rounded-lg p-2 text-xs bg-white">
+                    <input type="number" id="new-bkk-nom" placeholder="Nominal (Rp)" class="border border-slate-300 rounded-lg p-2 text-xs bg-white">
+                    <button onclick="addBkkDoc()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg p-2 text-xs transition">+ Tambah</button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-sm border border-slate-200">
+                        <thead>
+                            <tr class="bg-slate-50 text-slate-700 text-xs uppercase border-b">
+                                <th class="p-2.5 border-r">No. BKK</th>
+                                <th class="p-2.5 border-r">Cabang</th>
+                                <th class="p-2.5 border-r">Divisi</th>
+                                <th class="p-2.5 border-r">Posisi BKK</th>
+                                <th class="p-2.5 border-r">Keterangan</th>
+                                <th class="p-2.5 border-r text-right">Nominal</th>
+                                <th class="p-2.5 text-center">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="input-list-bkk-body" class="divide-y divide-slate-200"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- C. Input No. KBS + Tanggal + Status -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
+                <h2 class="text-lg font-bold text-blue-800 mb-1">C. Input No. KBS, Tanggal & Status (Batas Maks. 2x24 Jam)</h2>
+                <p class="text-xs text-slate-500 mb-4">Tanggal KBS otomatis dihitung usianya terhadap waktu saat ini untuk memantau batas maksimal 2x24 jam.</p>
+
+                <div class="grid grid-cols-1 sm:grid-cols-8 gap-2 mb-4 bg-blue-50/50 p-3 rounded-xl border border-blue-200">
+                    <input type="date" id="new-kbs-tgl" class="border border-slate-300 rounded-lg p-2 text-xs bg-white" title="Tanggal KBS">
+                    <input type="text" id="new-kbs-no" placeholder="No. KBS" class="border border-slate-300 rounded-lg p-2 text-xs bg-white">
+                    <select id="new-kbs-branch" class="border border-slate-300 rounded-lg p-2 text-xs bg-white">
+                        <option value="LEBAK">LEBAK</option>
+                        <option value="TGR">TGR</option>
+                        <option value="PARUNG">PARUNG</option>
+                    </select>
+                    <select id="new-kbs-div" class="border border-slate-300 rounded-lg p-2 text-xs bg-white">
+                        <option value="LCS">LCS</option>
+                        <option value="GA">GA</option>
+                        <option value="HRD">HRD</option>
+                        <option value="BMT">BMT</option>
+                    </select>
+                    <select id="new-kbs-status" class="border border-slate-300 rounded-lg p-2 text-xs bg-white font-semibold">
+                        <option value="Outstanding">Outstanding</option>
+                        <option value="Sudah PTJ">Sudah PTJ</option>
+                    </select>
+                    <input type="text" id="new-kbs-ket" placeholder="Keterangan" class="border border-slate-300 rounded-lg p-2 text-xs bg-white">
+                    <input type="number" id="new-kbs-nom" placeholder="Nominal (Rp)" class="border border-slate-300 rounded-lg p-2 text-xs bg-white">
+                    <button onclick="addKbsDoc()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg p-2 text-xs transition">+ Tambah</button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-sm border border-slate-200">
+                        <thead>
+                            <tr class="bg-slate-50 text-slate-700 text-xs uppercase border-b">
+                                <th class="p-2.5 border-r">Tanggal</th>
+                                <th class="p-2.5 border-r">No. KBS</th>
+                                <th class="p-2.5 border-r">Cabang</th>
+                                <th class="p-2.5 border-r">Divisi</th>
+                                <th class="p-2.5 border-r">Status & 2x24 Jam</th>
+                                <th class="p-2.5 border-r">Keterangan</th>
+                                <th class="p-2.5 border-r text-right">Nominal</th>
+                                <th class="p-2.5 text-center">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="input-list-kbs-body" class="divide-y divide-slate-200"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script Kalkulasi Otomatis & Koneksi Google Sheets -->
+    <script>
+        // GANTI URL DI BAWAH INI DENGAN URL WEB APP APPS SCRIPT ANDA (BERAKHIRAN /exec)
+        const WEB_APP_URL = "PASTE_URL_WEB_APP_ANDA_DISINI";
+
+        const branches = ['LEBAK', 'TGR', 'PARUNG'];
+        const divisions = ['LCS', 'GA', 'HRD', 'BMT'];
+
+        function getTodayStr() {
+            const now = new Date();
+            return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        }
+
+        function setSyncStatus(msg, isError = false) {
+            const bar = document.getElementById('sync-status-bar');
+            const txt = document.getElementById('sync-status-text');
+            txt.innerText = msg;
+            if (isError) {
+                bar.className = "bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl px-4 py-2.5 mb-4 text-xs flex justify-between items-center no-print";
+            } else {
+                bar.className = "bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl px-4 py-2.5 mb-4 text-xs flex justify-between items-center no-print";
+            }
+        }
+
+        function getKbsTimeBadge(tglStr, status) {
+            if (status === 'Sudah PTJ') {
+                return '<span class="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800">Sudah PTJ</span>';
+            }
+            if (!tglStr) {
+                return '<span class="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700">Outstanding (Tgl kosong)</span>';
+            }
+            const start = new Date(tglStr + 'T00:00:00');
+            const now = new Date();
+            const diffHours = (now - start) / (1000 * 60 * 60);
+
+            if (diffHours > 48) {
+                const days = Math.floor(diffHours / 24);
+                return `<span class="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-700">Lewat 2x24 Jam (${days} hr)</span>`;
+            } else if (diffHours >= 24) {
+                return '<span class="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800">Mendekati 2x24 Jam</span>';
+            } else {
+                return '<span class="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-blue-100 text-blue-800">Aman (&lt; 24 Jam)</span>';
+            }
+        }
+
+        let state = {
+            main: {
+                'LEBAK': { saldoCabang: 5000000, status: 'Selesai SO' },
+                'TGR': { saldoCabang: 3000000, status: 'Selesai SO' },
+                'PARUNG': { saldoCabang: 1500000, status: 'Proses' }
+            },
+            notes: { rekOm: 5886652, tunai: 175948 },
+            bkkList: [],
+            kbsList: []
+        };
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById('tab-' + tabName).classList.remove('hidden');
+
+            ['rekap', 'input'].forEach(t => {
+                const btn = document.getElementById('tab-btn-' + t);
+                if (t === tabName) {
+                    btn.className = 'py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-emerald-600 text-white transition';
+                } else {
+                    btn.className = 'py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition';
+                }
+            });
+            renderAll();
+        }
+
+        function printRekap() {
+            switchTab('rekap');
+            setTimeout(() => window.print(), 100);
+        }
+
+        async function loadFromCloud() {
+            const tglInput = document.getElementById('new-kbs-tgl');
+            if (tglInput && !tglInput.value) tglInput.value = getTodayStr();
+
+            if (!WEB_APP_URL || WEB_APP_URL.includes("PASTE_URL")) {
+                setSyncStatus("⚠️ URL Web App Apps Script belum diisi di kode index.html (menggunakan data lokal sementara).", true);
+                const saved = localStorage.getItem('petty_cash_cloud_cache');
+                if (saved) { try { state = { ...state, ...JSON.parse(saved) }; } catch(e) {} }
+                syncInputsFromState();
+                renderAll();
+                return;
+            }
+
+            try {
+                setSyncStatus("⏳ Mengambil data terbaru dari Google Sheets...");
+                const res = await fetch(WEB_APP_URL);
+                const data = await res.json();
+                if (data && data.main) {
+                    state = data;
+                    localStorage.setItem('petty_cash_cloud_cache', JSON.stringify(state));
+                    syncInputsFromState();
+                    renderAll();
+                    setSyncStatus("✅ Data tersinkron dengan Google Sheets (" + new Date().toLocaleTimeString('id-ID') + ")");
+                }
+            } catch (err) {
+                setSyncStatus("⚠️ Gagal terhubung ke Google Sheets, menampilkan cadangan lokal.", true);
+                const saved = localStorage.getItem('petty_cash_cloud_cache');
+                if (saved) { try { state = { ...state, ...JSON.parse(saved) }; } catch(e) {} }
+                syncInputsFromState();
+                renderAll();
+            }
+        }
+
+        function syncInputsFromState() {
+            document.getElementById('input-note-rek-om').value = state.notes.rekOm || 0;
+            document.getElementById('input-note-tunai').value = state.notes.tunai || 0;
+        }
+
+        async function saveData() {
+            state.notes.rekOm = parseFloat(document.getElementById('input-note-rek-om').value) || 0;
+            state.notes.tunai = parseFloat(document.getElementById('input-note-tunai').value) || 0;
+            localStorage.setItem('petty_cash_cloud_cache', JSON.stringify(state));
+
+            if (!WEB_APP_URL || WEB_APP_URL.includes("PASTE_URL")) {
+                alert('URL Apps Script belum diisi. Data hanya tersimpan di browser ini.');
+                return;
+            }
+
+            const btn = document.getElementById('btn-save-cloud');
+            btn.disabled = true;
+            btn.innerText = "⏳ Menyimpan...";
+            setSyncStatus("⏳ Mengirim perubahan ke Google Sheets...");
+
+            try {
+                await fetch(WEB_APP_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(state)
+                });
+                setSyncStatus("✅ Berhasil disimpan ke Google Sheets pada " + new Date().toLocaleTimeString('id-ID'));
+                alert('Berhasil! Data sudah tersimpan ke Google Sheets dan bisa dilihat di perangkat lain.');
+            } catch (err) {
+                setSyncStatus("❌ Gagal menyimpan ke Google Sheets: " + err.message, true);
+                alert('Gagal menyimpan ke Google Sheets. Periksa koneksi internet Anda.');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "☁️ Simpan ke Sheets";
+            }
+        }
+
+        function updateNotesFromInput() {
+            state.notes.rekOm = parseFloat(document.getElementById('input-note-rek-om').value) || 0;
+            state.notes.tunai = parseFloat(document.getElementById('input-note-tunai').value) || 0;
+            calculateAll();
+        }
+
+        function formatRp(num) {
+            return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
+        }
+
+        function computeSummaries() {
+            const kbsByBranch = { LEBAK: 0, TGR: 0, PARUNG: 0 };
+            const bkkByBranch = { LEBAK: 0, TGR: 0, PARUNG: 0 };
+            const saldoTunaiByBranch = { LEBAK: 0, TGR: 0, PARUNG: 0 };
+
+            const kbsByDivBranch = {};
+            const bkkByDivBranch = {};
+            divisions.forEach(div => {
+                kbsByDivBranch[div] = { LEBAK: 0, TGR: 0, PARUNG: 0 };
+                bkkByDivBranch[div] = { LEBAK: 0, TGR: 0, PARUNG: 0 };
+            });
+
+            const bkkPosisiByBranch = {
+                'Belum iSentral': { LEBAK: 0, TGR: 0, PARUNG: 0 },
+                'Sudah iSentral': { LEBAK: 0, TGR: 0, PARUNG: 0 }
+            };
+
+            state.kbsList.forEach(item => {
+                const nom = parseFloat(item.nom) || 0;
+                if (branches.includes(item.branch)) {
+                    kbsByBranch[item.branch] += nom;
+                    if (divisions.includes(item.div)) {
+                        kbsByDivBranch[item.div][item.branch] += nom;
+                    }
+                }
+            });
+
+            state.bkkList.forEach(item => {
+                const nom = parseFloat(item.nom) || 0;
+                if (branches.includes(item.branch)) {
+                    bkkByBranch[item.branch] += nom;
+                    if (divisions.includes(item.div)) {
+                        bkkByDivBranch[item.div][item.branch] += nom;
+                    }
+                    if (item.posisi === 'Sudah iSentral') {
+                        bkkPosisiByBranch['Sudah iSentral'][item.branch] += nom;
+                    } else {
+                        bkkPosisiByBranch['Belum iSentral'][item.branch] += nom;
+                    }
+                }
+            });
+
+            branches.forEach(b => {
+                const saldoCabang = parseFloat(state.main[b]?.saldoCabang) || 0;
+                saldoTunaiByBranch[b] = saldoCabang - bkkByBranch[b] - kbsByBranch[b];
+            });
+
+            return { kbsByBranch, bkkByBranch, saldoTunaiByBranch, kbsByDivBranch, bkkByDivBranch, bkkPosisiByBranch };
+        }
+
+        function addBkkDoc() {
+            const no = document.getElementById('new-bkk-no').value.trim();
+            const branch = document.getElementById('new-bkk-branch').value;
+            const div = document.getElementById('new-bkk-div').value;
+            const posisi = document.getElementById('new-bkk-posisi').value;
+            const ket = document.getElementById('new-bkk-ket').value.trim();
+            const nom = parseFloat(document.getElementById('new-bkk-nom').value) || 0;
+
+            if (!no) { alert('Isi Nomor BKK terlebih dahulu!'); return; }
+            state.bkkList.push({ no, branch, div, posisi, ket: ket || '-', nom });
+            document.getElementById('new-bkk-no').value = '';
+            document.getElementById('new-bkk-ket').value = '';
+            document.getElementById('new-bkk-nom').value = '';
+            renderAll();
+        }
+
+        function updateBkkPosisi(idx, newPos) {
+            state.bkkList[idx].posisi = newPos;
+            renderAll();
+        }
+
+        function deleteBkkDoc(idx) {
+            state.bkkList.splice(idx, 1);
+            renderAll();
+        }
+
+        function addKbsDoc() {
+            const tgl = document.getElementById('new-kbs-tgl').value || getTodayStr();
+            const no = document.getElementById('new-kbs-no').value.trim();
+            const branch = document.getElementById('new-kbs-branch').value;
+            const div = document.getElementById('new-kbs-div').value;
+            const status = document.getElementById('new-kbs-status').value;
+            const ket = document.getElementById('new-kbs-ket').value.trim();
+            const nom = parseFloat(document.getElementById('new-kbs-nom').value) || 0;
+
+            if (!no) { alert('Isi Nomor KBS terlebih dahulu!'); return; }
+            state.kbsList.push({ tgl, no, branch, div, status, ket: ket || '-', nom });
+            document.getElementById('new-kbs-no').value = '';
+            document.getElementById('new-kbs-ket').value = '';
+            document.getElementById('new-kbs-nom').value = '';
+            renderAll();
+        }
+
+        function updateKbsTgl(idx, newTgl) {
+            state.kbsList[idx].tgl = newTgl;
+            renderAll();
+        }
+
+        function updateKbsStatus(idx, newStatus) {
+            state.kbsList[idx].status = newStatus;
+            renderAll();
+        }
+
+        function deleteKbsDoc(idx) {
+            state.kbsList.splice(idx, 1);
+            renderAll();
+        }
+
+        function renderAll() {
+            const sum = computeSummaries();
+
+            // 1. Rekap Utama
+            let rekapMainHtml = '';
+            branches.forEach(b => {
+                let d = state.main[b];
+                let saldoCabang = d.saldoCabang || 0;
+                let saldoTunai = sum.saldoTunaiByBranch[b] || 0;
+                let kbsVal = sum.kbsByBranch[b] || 0;
+                let bkkVal = sum.bkkByBranch[b] || 0;
+                let total = saldoTunai + kbsVal + bkkVal;
+                rekapMainHtml += `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="p-3 border-r font-semibold text-slate-700">${b}</td>
+                        <td class="p-3 border-r font-semibold text-emerald-800 bg-emerald-50/40">${formatRp(saldoCabang)}</td>
+                        <td class="p-3 border-r font-medium ${saldoTunai < 0 ? 'text-rose-600 font-bold' : ''}">${formatRp(saldoTunai)}</td>
+                        <td class="p-3 border-r font-medium text-slate-600">${formatRp(kbsVal)}</td>
+                        <td class="p-3 border-r font-medium text-slate-600">${formatRp(bkkVal)}</td>
+                        <td class="p-3 border-r font-bold text-emerald-700 bg-emerald-50/50">${formatRp(total)}</td>
+                        <td class="p-3 text-slate-700">${d.status || '-'}</td>
+                    </tr>
+                `;
+            });
+            document.getElementById('rekap-main-body').innerHTML = rekapMainHtml;
+
+            // 2. Rekap KBS per Divisi
+            let rkbsHtml = '';
+            divisions.forEach(div => {
+                let divTot = 0;
+                rkbsHtml += `<tr class="hover:bg-slate-50"><td class="p-2 border-r font-medium">${div}</td>`;
+                branches.forEach(b => {
+                    let val = sum.kbsByDivBranch[div][b] || 0;
+                    divTot += val;
+                    rkbsHtml += `<td class="p-2 border-r">${formatRp(val)}</td>`;
+                });
+                rkbsHtml += `<td class="p-2 font-bold text-emerald-700 bg-emerald-50/50">${formatRp(divTot)}</td></tr>`;
+            });
+            document.getElementById('rekap-kbs-div-body').innerHTML = rkbsHtml;
+
+            // 3. Rekap BKK per Divisi
+            let rbkkHtml = '';
+            divisions.forEach(div => {
+                let divTot = 0;
+                rbkkHtml += `<tr class="hover:bg-slate-50"><td class="p-2 border-r font-medium">${div}</td>`;
+                branches.forEach(b => {
+                    let val = sum.bkkByDivBranch[div][b] || 0;
+                    divTot += val;
+                    rbkkHtml += `<td class="p-2 border-r">${formatRp(val)}</td>`;
+                });
+                rbkkHtml += `<td class="p-2 font-bold text-emerald-700 bg-emerald-50/50">${formatRp(divTot)}</td></tr>`;
+            });
+            document.getElementById('rekap-bkk-div-body').innerHTML = rbkkHtml;
+
+            // 3B. Progres Posisi BKK
+            let rpbkkHtml = '';
+            ['Belum iSentral', 'Sudah iSentral'].forEach(pos => {
+                let posTot = 0;
+                rpbkkHtml += `<tr class="hover:bg-slate-50"><td class="p-2 border-r font-medium">${pos}</td>`;
+                branches.forEach(b => {
+                    let val = sum.bkkPosisiByBranch[pos][b] || 0;
+                    posTot += val;
+                    rpbkkHtml += `<td class="p-2 border-r">${formatRp(val)}</td>`;
+                });
+                rpbkkHtml += `<td class="p-2 font-bold text-emerald-700 bg-emerald-50/50">${formatRp(posTot)}</td></tr>`;
+            });
+            document.getElementById('rekap-progres-bkk-body').innerHTML = rpbkkHtml;
+
+            // Input Saldo Cabang, Saldo Tunai (Otomatis) & Status
+            let isaldoHtml = '';
+            branches.forEach(b => {
+                let d = state.main[b];
+                let saldoTunai = sum.saldoTunaiByBranch[b] || 0;
+                isaldoHtml += `
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-3 border-r font-semibold">${b}</td>
+                        <td class="p-3 border-r"><input type="number" value="${d.saldoCabang}" onchange="state.main['${b}'].saldoCabang=parseFloat(this.value)||0; renderAll();" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-1.5 text-sm"></td>
+                        <td class="p-3 border-r font-bold bg-emerald-50/50 ${saldoTunai < 0 ? 'text-rose-600' : 'text-emerald-800'}">${formatRp(saldoTunai)}</td>
+                        <td class="p-3"><input type="text" value="${d.status}" onchange="state.main['${b}'].status=this.value; renderAll();" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-1.5 text-sm"></td>
+                    </tr>
+                `;
+            });
+            document.getElementById('input-saldo-body').innerHTML = isaldoHtml;
+
+            // Render Daftar Dokumen BKK & KBS
+            const filterBranch = document.getElementById('filter-doc-branch') ? document.getElementById('filter-doc-branch').value : 'ALL';
+            const searchQuery = document.getElementById('search-doc-input') ? document.getElementById('search-doc-input').value.toLowerCase() : '';
+
+            let inputBkkHtml = '';
+            state.bkkList.forEach((item, idx) => {
+                if (filterBranch !== 'ALL' && item.branch !== filterBranch) return;
+                if (searchQuery && !item.no.toLowerCase().includes(searchQuery) && !item.ket.toLowerCase().includes(searchQuery)) return;
+                const badgeClass = item.posisi === 'Sudah iSentral' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800';
+                inputBkkHtml += `
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-2.5 border-r font-bold text-slate-800">${item.no}</td>
+                        <td class="p-2.5 border-r">${item.branch}</td>
+                        <td class="p-2.5 border-r">${item.div}</td>
+                        <td class="p-2.5 border-r">
+                            <select onchange="updateBkkPosisi(${idx}, this.value)" class="rounded-lg px-2 py-1 text-xs font-bold ${badgeClass}">
+                                <option value="Belum iSentral" ${item.posisi === 'Belum iSentral' ? 'selected' : ''}>Belum iSentral</option>
+                                <option value="Sudah iSentral" ${item.posisi === 'Sudah iSentral' ? 'selected' : ''}>Sudah iSentral</option>
+                            </select>
+                        </td>
+                        <td class="p-2.5 border-r">${item.ket}</td>
+                        <td class="p-2.5 border-r text-right font-medium">${formatRp(item.nom)}</td>
+                        <td class="p-2.5 text-center"><button onclick="deleteBkkDoc(${idx})" class="text-rose-600 hover:underline text-xs font-bold">Hapus</button></td>
+                    </tr>
+                `;
+            });
+            document.getElementById('input-list-bkk-body').innerHTML = inputBkkHtml || '<tr><td colspan="7" class="p-3 text-center text-slate-400 text-xs">Belum ada data No. BKK</td></tr>';
+
+            let inputKbsHtml = '';
+            state.kbsList.forEach((item, idx) => {
+                if (filterBranch !== 'ALL' && item.branch !== filterBranch) return;
+                if (searchQuery && !item.no.toLowerCase().includes(searchQuery) && !item.ket.toLowerCase().includes(searchQuery)) return;
+                const badgeClass = item.status === 'Sudah PTJ' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800';
+                inputKbsHtml += `
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-2.5 border-r"><input type="date" value="${item.tgl || ''}" onchange="updateKbsTgl(${idx}, this.value)" class="bg-slate-50 border border-slate-300 rounded px-1.5 py-1 text-xs"></td>
+                        <td class="p-2.5 border-r font-bold text-slate-800">${item.no}</td>
+                        <td class="p-2.5 border-r">${item.branch}</td>
+                        <td class="p-2.5 border-r">${item.div}</td>
+                        <td class="p-2.5 border-r">
+                            <div class="flex flex-col gap-1">
+                                <select onchange="updateKbsStatus(${idx}, this.value)" class="rounded-lg px-2 py-1 text-xs font-bold ${badgeClass}">
+                                    <option value="Outstanding" ${item.status === 'Outstanding' ? 'selected' : ''}>Outstanding</option>
+                                    <option value="Sudah PTJ" ${item.status === 'Sudah PTJ' ? 'selected' : ''}>Sudah PTJ</option>
+                                </select>
+                                ${getKbsTimeBadge(item.tgl, item.status)}
+                            </div>
+                        </td>
+                        <td class="p-2.5 border-r">${item.ket}</td>
+                        <td class="p-2.5 border-r text-right font-medium">${formatRp(item.nom)}</td>
+                        <td class="p-2.5 text-center"><button onclick="deleteKbsDoc(${idx})" class="text-rose-600 hover:underline text-xs font-bold">Hapus</button></td>
+                    </tr>
+                `;
+            });
+            document.getElementById('input-list-kbs-body').innerHTML = inputKbsHtml || '<tr><td colspan="8" class="p-3 text-center text-slate-400 text-xs">Belum ada data No. KBS</td></tr>';
+
+            // Rekap Dokumen BKK & KBS
+            let rekapBkkHtml = '', totBkkAll = 0;
+            state.bkkList.forEach(item => {
+                totBkkAll += item.nom || 0;
+                rekapBkkHtml += `
+                    <tr>
+                        <td class="p-2 border-r font-bold">${item.no}</td>
+                        <td class="p-2 border-r">${item.branch}</td>
+                        <td class="p-2 border-r">${item.div}</td>
+                        <td class="p-2 border-r">${item.posisi}</td>
+                        <td class="p-2 text-right font-medium">${formatRp(item.nom)}</td>
+                    </tr>
+                `;
+            });
+            document.getElementById('rekap-list-bkk-body').innerHTML = rekapBkkHtml || '<tr><td colspan="5" class="p-2 text-center text-slate-400">Nihil</td></tr>';
+            document.getElementById('rekap-list-bkk-total').innerText = formatRp(totBkkAll);
+
+            let rekapKbsHtml = '', totKbsAll = 0;
+            state.kbsList.forEach(item => {
+                totKbsAll += item.nom || 0;
+                rekapKbsHtml += `
+                    <tr>
+                        <td class="p-2 border-r font-medium">${item.tgl || '-'}</td>
+                        <td class="p-2 border-r font-bold">${item.no}</td>
+                        <td class="p-2 border-r">${item.branch} / ${item.div}</td>
+                        <td class="p-2 border-r">${item.status} — ${getKbsTimeBadge(item.tgl, item.status)}</td>
+                        <td class="p-2 text-right font-medium">${formatRp(item.nom)}</td>
+                    </tr>
+                `;
+            });
+            document.getElementById('rekap-list-kbs-body').innerHTML = rekapKbsHtml || '<tr><td colspan="5" class="p-2 text-center text-slate-400">Nihil</td></tr>';
+            document.getElementById('rekap-list-kbs-total').innerText = formatRp(totKbsAll);
+
+            calculateAll(sum);
+        }
+
+        function calculateAll(precomputedSum) {
+            const sum = precomputedSum || computeSummaries();
+            let tSaldoCabang = 0, tSaldo = 0, tKbs = 0, tBkk = 0, tTotal = 0;
+            branches.forEach(b => {
+                let d = state.main[b];
+                let saldoTunai = sum.saldoTunaiByBranch[b] || 0;
+                let kbsVal = sum.kbsByBranch[b] || 0;
+                let bkkVal = sum.bkkByBranch[b] || 0;
+                tSaldoCabang += d.saldoCabang || 0;
+                tSaldo += saldoTunai;
+                tKbs += kbsVal;
+                tBkk += bkkVal;
+                tTotal += saldoTunai + kbsVal + bkkVal;
+            });
+            document.getElementById('rekap-tot-saldo-cabang').innerText = formatRp(tSaldoCabang);
+            document.getElementById('rekap-tot-saldo').innerText = formatRp(tSaldo);
+            document.getElementById('rekap-tot-kbs').innerText = formatRp(tKbs);
+            document.getElementById('rekap-tot-bkk').innerText = formatRp(tBkk);
+            document.getElementById('rekap-tot-total').innerText = formatRp(tTotal);
+
+            let rOm = parseFloat(state.notes.rekOm) || 0;
+            let tunai = parseFloat(state.notes.tunai) || 0;
+            let grandPosisiDana = rOm + tunai + tKbs + tBkk;
+            let selisih = grandPosisiDana - tSaldoCabang;
+
+            document.getElementById('rekap-note-rek-om').innerText = formatRp(rOm);
+            document.getElementById('rekap-note-tunai').innerText = formatRp(tunai);
+            document.getElementById('rekap-note-kbs').innerText = formatRp(tKbs);
+            document.getElementById('rekap-note-bkk').innerText = formatRp(tBkk);
+            document.getElementById('rekap-grand-total-notes').innerText = formatRp(grandPosisiDana);
+
+            const statusEl = document.getElementById('rekap-klop-status');
+            if (selisih === 0) {
+                statusEl.innerText = `✅ KLOP (${formatRp(tSaldoCabang)})`;
+                statusEl.className = 'text-xs font-bold text-emerald-700';
+            } else {
+                statusEl.innerText = `⚠️ Selisih ${formatRp(selisih)} dari Saldo Cabang (${formatRp(tSaldoCabang)})`;
+                statusEl.className = 'text-xs font-bold text-rose-600';
+            }
+        }
+
+        function exportToExcel() {
+            const sum = computeSummaries();
+            let wb = XLSX.utils.book_new();
+
+            let tKbsAll = 0, tBkkAll = 0;
+            branches.forEach(b => {
+                tKbsAll += sum.kbsByBranch[b] || 0;
+                tBkkAll += sum.bkkByBranch[b] || 0;
+            });
+
+            let wsData = [
+                ["REKAP PETTY CASH & STOCK OPNAME (SO) UTAMA"],
+                ["Cabang", "Saldo Cabang", "Saldo (Otomatis)", "KBS", "BKK", "Total", "Status Progres"]
+            ];
+            branches.forEach(b => {
+                let d = state.main[b];
+                let saldoTunai = sum.saldoTunaiByBranch[b] || 0;
+                let kbsVal = sum.kbsByBranch[b] || 0;
+                let bkkVal = sum.bkkByBranch[b] || 0;
+                wsData.push([b, d.saldoCabang || 0, saldoTunai, kbsVal, bkkVal, saldoTunai + kbsVal + bkkVal, d.status]);
+            });
+
+            wsData.push([], ["REKAP KBS PER DIVISI"], ["Divisi", "Lebak", "Tangerang", "Parung", "Total"]);
+            divisions.forEach(div => {
+                let row = [div], tot = 0;
+                branches.forEach(b => { let val = sum.kbsByDivBranch[div][b] || 0; row.push(val); tot += val; });
+                row.push(tot);
+                wsData.push(row);
+            });
+
+            wsData.push([], ["REKAP BKK PER DIVISI"], ["Divisi", "Lebak", "Tangerang", "Parung", "Total"]);
+            divisions.forEach(div => {
+                let row = [div], tot = 0;
+                branches.forEach(b => { let val = sum.bkkByDivBranch[div][b] || 0; row.push(val); tot += val; });
+                row.push(tot);
+                wsData.push(row);
+            });
+
+            wsData.push([], ["PROGRES POSISI BKK"], ["Posisi", "Lebak", "Tangerang", "Parung", "Total"]);
+            ['Belum iSentral', 'Sudah iSentral'].forEach(pos => {
+                let row = [pos], tot = 0;
+                branches.forEach(b => { let val = sum.bkkPosisiByBranch[pos][b] || 0; row.push(val); tot += val; });
+                row.push(tot);
+                wsData.push(row);
+            });
+
+            let grandPosisi = (state.notes.rekOm || 0) + (state.notes.tunai || 0) + tKbsAll + tBkkAll;
+            wsData.push([], ["CATATAN & POSISI DANA (REKONSILIASI SALDO CABANG)"],
+                ["Uang di Rek OM", state.notes.rekOm],
+                ["Uang Tunai", state.notes.tunai],
+                ["Total KBS", tKbsAll],
+                ["Total BKK", tBkkAll],
+                ["TOTAL KESELURUHAN POSISI DANA", grandPosisi]
+            );
+
+            wsData.push([], ["DAFTAR NO. BKK & POSISI iSENTRAL"], ["No. BKK", "Cabang", "Divisi", "Posisi", "Keterangan", "Nominal"]);
+            state.bkkList.forEach(item => {
+                wsData.push([item.no, item.branch, item.div, item.posisi, item.ket, item.nom]);
+            });
+
+            wsData.push([], ["DAFTAR NO. KBS & KONTROL 2x24 JAM"], ["Tanggal", "No. KBS", "Cabang", "Divisi", "Status", "Keterangan", "Nominal"]);
+            state.kbsList.forEach(item => {
+                wsData.push([item.tgl || '-', item.no, item.branch, item.div, item.status, item.ket, item.nom]);
+            });
+
+            let ws = XLSX.utils.aoa_to_sheet(wsData);
+            XLSX.utils.book_append_sheet(wb, ws, "Rekap Lengkap Kas");
+            XLSX.writeFile(wb, "Rekap_Petty_Cash_SO_Lengkap.xlsx");
+        }
+
+        window.onload = loadFromCloud;
+    </script>
+</body>
+</html>
